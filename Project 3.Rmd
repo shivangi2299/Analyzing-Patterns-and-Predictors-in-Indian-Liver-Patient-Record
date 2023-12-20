@@ -1,0 +1,487 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE , warning = FALSE, message = FALSE)
+```
+
+```{r}
+library(ggplot2)
+library(car)
+library(caret)
+library(patchwork)
+library(pROC)
+```
+
+```{r}
+setwd("C:/Users/patel/OneDrive/Documents/DSC423/project/Dataset")
+data <- read.csv("indian_liver_patient.csv", header = TRUE, sep = ",")
+head(data)
+```
+
+```{r}
+summary(data)
+```
+
+**Let's clean the missing values from the dataset.**
+
+```{r}
+#Check for missing values.
+missing_data <- sum(is.na(data))
+missing_data
+
+# Removing all the missing values.
+data = na.omit(data)
+sum(is.na(data))
+```
+
+```{r}
+# Changing the name of Target variable.
+data$Dataset <- ifelse(data$Dataset == 1, 1, 0)
+names(data)[names(data) == "Dataset"] <- "Target"
+```
+
+```{r}
+#Converting Target variable to factor
+data$Target <- factor(data$Target, levels = c(0, 1), labels = c("Class0", "Class1"))
+str(data)
+```
+
+## Data Visualizations.
+
+```{r}
+ggplot(data, aes(x=Age)) + geom_histogram(fill = "grey",color = "black")+
+  labs(
+    title = "Distribution Age",
+    )+
+  geom_vline(xintercept = mean(data$Age), color = "red", linetype = "dashed", size = 1)+
+  geom_vline(xintercept = median(data$Age), color = "blue", linetype = "dashed", size = 1)
+```
+
+The histogram displays the age distribution of individuals, with the majority aged between mid-20s to mid-50s. Fewer individuals are found in the youngest (0-20) and oldest (60+) age brackets. The median age is in the late 40s.
+
+```{r}
+ggplot(data, aes(x = Target)) +
+  geom_bar(fill = "orange") +
+  labs(title = "Count Plot for Target Variable", x = "Target", y = "Count")
+```
+
+The count plot represents the distribution of a binary 'Target' variable. Category '1' dominates with nearly 400 occurrences, while category '0' has slightly over 200. The data shows a clear imbalance between the two categories.
+
+```{r}
+numerical_features <- names(data)[sapply(data, is.numeric)]
+plot_list <- list()
+
+for (feature in numerical_features) {
+  p <- ggplot(data, aes_string(x = feature)) + 
+    geom_histogram(bins = 30, fill="grey", color="black") + 
+    labs(title = paste("Histogram of", feature)) +
+    geom_vline(xintercept = mean(data[[feature]], na.rm = TRUE), color = "red", linetype = "dashed", size = 1) +
+    geom_vline(xintercept = median(data[[feature]], na.rm = TRUE), color = "blue", linetype = "dashed", size = 1)
+  
+  plot_list[[feature]] <- p
+}
+
+# Combine the plots
+plot_grid <- wrap_plots(plot_list, ncol = 3)  # Adjust ncol as needed
+
+# Plot the grid
+plot_grid
+```
+
+This dataset appears to represent a population where the majority have normal levels for the parameters considered, especially concerning liver functions. However, there are certainly individuals with values outside the typical range who might be at risk for certain health conditions, particularly liver-related ones.
+
+```{r}
+numerical_features <- names(data)[sapply(data, is.numeric)]
+plot_list <- list()
+
+for (feature in numerical_features) {
+  p <- ggplot(data, aes_string(x = "Target", y = feature)) + 
+    geom_boxplot(fill="grey") + 
+    labs(title = paste("Boxplot of", feature, "by Dataset"))
+  
+  plot_list[[feature]] <- p
+}
+
+# Combine the plots into a single plot object
+plot_grid <- wrap_plots(plot_list, ncol = 3)  # Adjust the number of columns as necessary
+
+# Display the grid of plots
+plot_grid
+```
+
+These boxplots represent various medical features, categorized by a binary "Target." Both groups exhibit similar distributions for many features. However, Group 1 consistently shows higher values and more outliers for liver-related metrics like bilirubin levels and aminotransferases, suggesting possible liver issues. While both groups have comparable distributions for other metrics like age and protein levels, the presence of outliers, particularly in Group 1, might indicate severe medical conditions or data anomalies. The data distinctions hint at the potential for classifying individuals based on these medical attributes.
+
+```{r}
+# # Load necessary libraries
+# library(ggplot2)
+# library(patchwork)
+
+# Define the variables for which to plot densities
+variables_to_plot <- c("Age", "Total_Bilirubin", "Direct_Bilirubin", "Alkaline_Phosphotase", 
+                       "Alamine_Aminotransferase", "Aspartate_Aminotransferase", "Total_Protiens", 
+                       "Albumin", "Albumin_and_Globulin_Ratio")
+
+# # Apply log transformation to the variables as specified
+# data$Total_Bilirubin <- log(data$Total_Bilirubin)
+# data$Direct_Bilirubin <- log(data$Direct_Bilirubin)
+# data$Alkaline_Phosphotase <- log(data$Alkaline_Phosphotase)
+# data$Alamine_Aminotransferase <- log(data$Alamine_Aminotransferase)
+# data$Aspartate_Aminotransferase <- log(data$Aspartate_Aminotransferase)
+
+# Create a list to store the plots
+plot_list <- list()
+
+# Loop through the variables and create a density plot for each
+for (variable in variables_to_plot) {
+  p <- ggplot(data, aes_string(x = variable)) +
+    geom_density(fill = "blue", alpha = 0.5) +
+    labs(title = paste("Density plot of", variable))
+  
+  plot_list[[variable]] <- p
+}
+
+# Combine the plots into a grid
+plot_grid <- wrap_plots(plot_list, ncol = 3)  # Adjust ncol as necessary
+
+# Display the grid of plots
+plot_grid
+
+```
+
+The density plots display the distribution of various clinical metrics for a population. Age is centered around middle adulthood, with most biochemical markers showing a right-skewed distribution, indicating a few individuals with high values. Total proteins and albumin have a near-normal distribution, suggesting typical ranges for the majority, while the albumin and globulin ratio is mostly below 1. Overall, these plots suggest a range of health statuses, with most individuals within normal bounds but some exhibiting potential clinical abnormalities.
+
+```{r}
+ggplot(data, aes(x = Gender)) +
+  geom_bar(fill = "grey") +
+  labs(title = "Count Plot for Target", x = "Target", y = "Count")
+```
+
+The plot shows that the count for males is significantly higher than for females, with males exceeding 400 counts and females just over 100. This visual suggests that whatever the "Target" represents, it is more common in males than females within the dataset from which this chart was generated.
+
+```{r}
+ggplot(data, aes(x=Total_Bilirubin,y = Direct_Bilirubin))+
+  geom_point()+facet_grid(.~Gender)
+```
+
+While both genders show a positive correlation between Total and Direct Bilirubin, males seem to have a wider range of Total Bilirubin values, and the distribution of their data points is different from that of females. The presence of outliers in both groups suggests unique cases or potential data anomalies.
+
+```{r}
+ggplot(data, aes(x=Aspartate_Aminotransferase,y=Alamine_Aminotransferase))+
+  geom_point()+facet_grid(.~Gender)
+```
+
+While both genders generally show low levels of the enzymes, males display a slightly broader distribution, with a few having significantly elevated enzyme levels. The scatter pattern, especially for males, suggests diverse conditions or factors affecting enzyme levels in different ways.
+
+```{r}
+ggplot(data, aes(x=Alkaline_Phosphotase ,y=Alamine_Aminotransferase))+
+  geom_point()+facet_grid(.~Gender)
+```
+
+For both genders, most individuals have low levels of both enzymes. There are only a few instances in either gender where elevated levels of enzymes are observed. However, males seem to have a slightly more pronounced clustering in the lower levels of Alkaline Phosphatase compared to females. The data distribution indicates a general trend of lower enzyme levels for the majority, with rare exceptions of elevated levels.
+
+```{r}
+ggplot(data, aes(x=Total_Protiens ,y=Albumin))+
+  geom_point()+facet_grid(.~Gender)
+```
+
+Both the Total Proteins and Albumin are distributed across a range, with varying densities of data points across different regions of the plot for both genders.For both genders, there's a positive correlation between Total Proteins and Albumin, meaning as the level of one increases, the other tends to increase as well. Males have a denser clustering of data points in the mid to high ranges, whereas females have a more spread-out distribution across the plot. Both plots, however, suggest that most individuals from both genders have mid-range levels of Total Proteins and Albumin.
+
+```{r}
+ggplot(data, aes(x=Albumin ,y=Albumin_and_Globulin_Ratio))+
+  geom_point()+facet_grid(.~Gender)
+```
+
+Both the Albumin and Albumin and Globulin Ratio are plotted across a range, and the densities of data points vary across different regions of the plot for both genders. For both genders, there's a positive correlation between Albumin levels and the Albumin and Globulin Ratio. This means as the level of one metric increases, the other tends to increase as well. While both plots show a similar trend, males have a slightly more pronounced clustering in the mid-ranges compared to females. Both genders mostly exhibit mid-range values for the given metrics.
+
+```{r}
+ggplot(data, aes(x=Total_Protiens,y=Albumin_and_Globulin_Ratio))+
+  geom_point()+facet_grid(.~Gender)
+```
+
+The Total Proteins are plotted against the Albumin and Globulin Ratio, giving insights into the concentration and distribution of data points for both genders. While both genders display a lack of a strong linear correlation between Total Proteins and the Albumin and Globulin Ratio, the distribution and density of data points differ slightly between the two. Males have a more dispersed distribution in the mid-ranges, while females have a more concentrated clustering in specific regions of the plot.
+
+```{r}
+numerical_data <- data[, sapply(data, is.numeric)]
+correlation_matrix <- cor(numerical_data)
+correlation_matrix
+```
+
+```{r}
+d = data
+str(d)
+```
+
+```{r}
+# library(ROSE)
+# 
+# d <- ovun.sample(Target~., data = d, method = "both", p = 0.6, seed = 222, N = 583)$data
+# 
+# table((d$Target))
+```
+
+```{r}
+#Splitting the Data in Test and Train.
+set.seed(123)
+sample_indices <- createDataPartition(d$Target, p = 0.7 , list = FALSE)
+train_data <- d[sample_indices, ]
+test_data <- d[-sample_indices, ]
+```
+
+## Logistic Regression.
+
+```{r}
+#Fitting Logistic Regression model.
+model <- glm(Target ~ ., data = train_data, family = binomial())
+summary(model)
+```
+
+The logistic regression model identifies 'Alamine_Aminotransferase' and 'Total_Proteins' as significant predictors for the target outcome, with positive coefficients indicating a higher likelihood of the outcome as these values increase. The exclusion of 'GenderMale' due to singularity suggests gender is a binary variable in this model. Other variables did not significantly predict the outcome at the 5% significance level. The model improves upon the null model and demonstrates adequate fit with convergence in 8 iterations.
+
+```{r}
+# Making predictions
+predictions <- predict(model, newdata = test_data, type = "response")
+
+# Convert probabilities to binary class (adjust based on your factor levels)
+# Make sure to use the same level as in your original Dataset variable
+predicted_class <- ifelse(predictions > 0.5, "Class1", "Class0")  # Adjust "1" and "0" based on your factor levels
+predicted_class <- factor(predicted_class, levels = levels(test_data$Target))
+
+# Confusion Matrix
+model_cm <- confusionMatrix(predicted_class, test_data$Target)
+
+model_cm
+```
+
+While the model has decent overall accuracy and specificity, its sensitivity is low, meaning it does not identify Class0 cases well. It also does not perform significantly better than randomly guessing the most common class, as indicated by the P-Value [Acc \> NIR] and the Kappa value. Additionally, the imbalance highlighted by Mcnemar's test suggests the model is biased toward predicting Class1.
+
+**Variable Selection using the Backward Step Selection Model.**
+
+```{r}
+
+step(model,direction="backward")
+```
+
+```{r}
+# Fitting the Step-model
+model2 = glm(formula = Target ~ Age + Direct_Bilirubin + Alamine_Aminotransferase + 
+    Total_Protiens + Albumin, family = binomial(), data = train_data)
+summary(model2)
+```
+
+The logistic regression analysis outputs a model indicating that out of the five predictors evaluated, Direct_Bilirubin, Alamine_Aminotransferase, Total_Proteins, and Albumin significantly affect the target variable, with Direct_Bilirubin and Alamine_Aminotransferase increasing the likelihood of the target event, while Albumin decreases it. Age shows a marginal increase in likelihood, though not at a conventional level of significance. The model's adequacy is suggested by the reduction in deviance, yet the warning about probabilities being 0 or 1 suggests potential overfitting issues. With seven iterations of Fisher Scoring for convergence, the model's fit is decent but needs cautious interpretation due to the extremes in predicted probabilities.
+
+```{r}
+# Making predictions
+predictions2 <- predict(model2, newdata = test_data, type = "response")
+
+# Make sure to use the same level as in your original Dataset variable
+predicted_class <- ifelse(predictions2 > 0.5, "Class1", "Class0")
+predicted_class <- factor(predicted_class, levels = levels(test_data$Target))
+
+# Confusion Matrix
+model2_cm <- confusionMatrix(predicted_class, test_data$Target)
+model2_cm
+```
+
+The confusion matrix indicates that the classification model has moderate accuracy (73.41%) and is substantially better at predicting true negatives (specificity: 94.355%) than true positives (sensitivity: 20.408%) for Class0. It tends to misclassify Class1 as Class0 quite frequently, as shown by the lower positive predictive value (58.824%) and a slightly higher negative predictive value (75%). The model's ability to identify Class0 is low, with a detection rate of just 5.78%. Overall, the model shows limited agreement beyond chance in its predictions (Kappa: 0.184) and has a moderate balanced accuracy (57.382%), suggesting that it performs modestly better than random guessing, particularly in identifying the negative class.
+
+```{r}
+anova(model,model2,test="Chisq")
+```
+
+**Plotting the ROC curve and Residual Plots for better understanding**
+
+```{r}
+library(ROCR)
+
+# Assuming `model2` is your fitted model and `train_data$Target` is the true binary class label
+fitted_probs <- predict(model2, type = "response")
+observed <- train_data$Target
+
+# Create the prediction object for ROC
+prediction <- prediction(fitted_probs, observed)
+
+# Create the ROC performance object
+roc <- performance(prediction, "tpr", "fpr")
+
+# Calculate the AUC
+auc <- performance(prediction, "auc")
+auc_value <- auc@y.values[[1]]  # Extract the AUC value
+
+# Plot the ROC curve
+plot(roc, main="ROC Curve")
+# Add the AUC value to the plot
+abline(a=0, b=1, lty=2, col="gray")
+text(0.5, 0.3, paste("AUC =", round(auc_value, 4)), col="red")
+
+# # Plot for Deviance Residuals
+# dev_res <- residuals(model2, type = "deviance")
+# plot(dev_res, ylab="Deviance Residuals", xlab="Index", main="Deviance Residuals Plot")
+# abline(h = 0, col = "red")
+
+
+residuals <- residuals(model2, type = "deviance")
+plot_2 <- plot(model2$linear.predictors, residuals, xlab = "Linear Predictors", ylab = "Residual Deviance")
+```
+
+The ROC curve with an AUC of 0.7605 indicates that the binary classification model has good discriminatory ability. While it's not perfect, the model is significantly better than random guessing at distinguishing between the two classes. The curve's rapid initial ascent suggests that the model achieves a high true positive rate without incurring a high false positive rate at lower thresholds, which is desirable in a good classifier. Overall, this model shows solid performance, though there is potential for further optimization to improve its accuracy.
+
+**Plotting Influence Plot**
+
+```{r}
+influencePlot(model2)
+```
+
+```{r}
+# Calculate Cook's distance
+cooksD <- cooks.distance(model2)
+
+# Threshold for identifying influential points (commonly used cutoff is 4/(n-k-1))
+cutoff <- 4 / (nrow(train_data) - length(coef(model2)) - 1)
+
+# Find the row numbers of the influential points
+influential <- as.numeric(names(cooksD)[(cooksD > cutoff)])
+
+# Create a new dataset without these points
+cleaned_data <- train_data[-influential, ]
+
+# Re-fit the model without the influential points
+model_clean <- glm(formula = Target ~ Age + Direct_Bilirubin + Alamine_Aminotransferase + 
+    Total_Protiens + Albumin, family = binomial(), data = cleaned_data)
+
+summary(model_clean)
+
+```
+
+```{r}
+# Making predictions
+predictions3 <- predict(model_clean, newdata = test_data, type = "response")
+
+# Make sure to use the same level as in your original Dataset variable
+predicted_class <- ifelse(predictions3 > 0.5, "Class1", "Class0")
+predicted_class <- factor(predicted_class, levels = levels(test_data$Target))
+
+# Confusion Matrix
+model_clean_cm <- confusionMatrix(predicted_class, test_data$Target)
+model_clean_cm
+```
+
+**Getting Performance Metrics**
+
+```{r}
+
+# Calculate Precision (Positive Predictive Value)
+precision <- model_clean_cm$byClass['Pos Pred Value']
+
+# Calculate Recall (same as Sensitivity)
+recall <- model_clean_cm$byClass['Sensitivity']
+
+# Calculate F1 Score
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+# Print the results
+print(paste("Precision:", precision))
+print(paste("Recall:", recall))
+print(paste("F1 Score:", f1_score))
+
+```
+
+# SVM Model
+
+```{r}
+library(e1071)
+
+tuneGrid <- expand.grid(C = c(0.1, 1, 5, 10))
+# Fit SVM model with a linear kernel
+svm_model <- svm(Target ~ ., data = train_data, method = "C-classification", kernel = "sigmoid", tuneGrid=tuneGrid)
+
+# Make predictions using the SVM model
+svm_pred <- predict(svm_model, newdata = test_data)
+
+# Ensure that the true target variable is a factor and has the same levels as the model's target variable
+test_data$Target <- factor(test_data$Target, levels = levels(train_data$Target))
+
+# Create the confusion matrix
+svm_cm <- confusionMatrix(svm_pred, test_data$Target)
+svm_cm
+
+```
+
+```{r}
+# Create a trainControl object for cross-validation
+dt_ctrl <- trainControl(method = "cv",       # Use k-fold cross-validation
+                     number = 5,         # Number of folds (you can change this)
+                     savePredictions = "final", # Save predictions for each fold
+                     summaryFunction = twoClassSummary, # Summary function for binary classification
+                     classProbs = TRUE,   # Return class probabilities
+                     sampling = "down",
+                     verboseIter = TRUE)  # Print training iterations
+
+# Define the control parameters for the rpart model
+#rpart_ctrl <- rpart.control(minsplit = 20, minbucket = 10, maxdepth = 5, cp = 0.001)
+
+
+# Specify the tuning grid for the decision tree, focusing on the cp parameter
+#grid <- expand.grid(.cp = seq(0.001, 0.1, by = 0.001))
+
+# Train the decision tree model using the same CV control object
+set.seed(123) # For reproducibility
+model_dt <- train(Target ~ .,              # Model formula
+                  data = train_data,       # Dataset
+                  method = "rpart",        # Use recursive partitioning (decision tree)
+                  trControl = dt_ctrl,        # Use the existing CV control object
+                  #tuneGrid = grid,         # Tuning Grid
+                  metric = "ROC",          # Optimization metric: ROC curve 
+                  preProcess = c("center", "scale")) # Pre-processing steps if needed
+                  #control = rpart_ctrl) # Decision tree control parameters
+
+# Predict using the decision tree model
+predictions <- predict(model_dt, newdata = test_data)
+
+# Create the confusion matrix
+dt_cm <- confusionMatrix(predictions, test_data$Target)
+
+# Print the confusion matrix
+print(dt_cm)
+
+```
+
+```{r}
+var_imp <- varImp(model_dt, scale= FALSE)
+var_imp
+```
+
+```{r}
+plot(var_imp)
+```
+
+```{r}
+library(dplyr)
+new_data_train = select(train_data,c("Alkaline_Phosphotase","Aspartate_Aminotransferase","Alamine_Aminotransferase","Total_Bilirubin","Age","Target"))
+
+
+new_data_test = select(test_data,c("Alkaline_Phosphotase","Aspartate_Aminotransferase","Alamine_Aminotransferase","Total_Bilirubin","Age","Target"))
+```
+
+```{r}
+new_model_dt <- train(Target ~ .,              # Model formula
+                  data = new_data_train,       # Dataset
+                  method = "rpart",        # Use recursive partitioning (decision tree)
+                  trControl = dt_ctrl,        # Use the existing CV control object
+                  #tuneGrid = grid,         # Tuning Grid
+                  metric = "ROC",          # Optimization metric: ROC curve 
+                  preProcess = c("center", "scale"))
+```
+
+```{r}
+predictions <- predict(new_model_dt, newdata = new_data_test)
+
+# Create the confusion matrix
+dt_cm <- confusionMatrix(predictions, test_data$Target)
+
+# Print the confusion matrix
+print(dt_cm)
+```
